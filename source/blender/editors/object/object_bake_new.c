@@ -205,9 +205,30 @@ static int bake_exec(bContext *C, wmOperator *op)
 	const int margin = RNA_int_get(op->ptr, "margin");
 	const bool is_external = RNA_boolean_get(op->ptr, "is_save_external");
 	const bool is_linear = is_data_pass(pass_type);
+	const bool use_selected_to_active = RNA_boolean_get(op->ptr, "use_selected_to_active");
+	const float cage_extrusion = RNA_float_get(op->ptr, "cage_extrusion");
+
 	char filepath[FILE_MAX];
-	int need_undeformed = 0;
 	RNA_string_get(op->ptr, "filepath", filepath);
+
+	Object *from_object = NULL;
+
+	if (use_selected_to_active) {
+		CTX_DATA_BEGIN(C, Object *, ob_iter, selected_editable_objects)
+		{
+			if (ob_iter == object)
+				continue;
+
+			from_object = ob_iter;
+			break;
+		}
+		CTX_DATA_END;
+
+		if (from_object == NULL) {
+			BKE_report(op->reports, RPT_ERROR, "No valid selected object");
+			return OPERATOR_CANCELLED;
+		}
+	}
 
 	RE_engine_bake_set_engine_parameters(re, bmain, scene);
 
@@ -256,13 +277,23 @@ static int bake_exec(bContext *C, wmOperator *op)
 
 
 	/* get the mesh as it arrives in the renderer */
-
 	//int apply_modifiers, int settings (1=preview, 2=render), int calc_tessface, int calc_undeformed
 	me = BKE_mesh_new_from_object(bmain, scene, object, 1, 2, 1, 0);
 	//TODO delete the mesh afterwards
 
 	/* populate the pixel array with the face data */
 	RE_populate_bake_pixels(me, pixel_array, width, height);
+
+	/* high-poly to low-poly baking */
+	if (from_object && (from_object->type == OB_MESH))
+	{
+		Mesh *from_me = BKE_mesh_new_from_object(bmain, scene, from_object, 1, 2, 1, 0);
+		//TODO delete the mesh afterwards
+
+		RE_populate_bake_pixels_from_object(me, from_me, pixel_array, num_pixels, cage_extrusion);
+
+		object = from_object;
+	}
 
 	if (RE_engine_has_bake(re))
 		ok = RE_engine_bake(re, object, pixel_array, num_pixels, depth, pass_type, result);
@@ -386,4 +417,6 @@ void OBJECT_OT_bake(wmOperatorType *ot)
 	ot->prop = RNA_def_int(ot->srna, "width", 512, 1, INT_MAX, "Width", "Horizontal dimension of the baking map", 64, 4096);
 	ot->prop = RNA_def_int(ot->srna, "height", 512, 1, INT_MAX, "Height", "Vertical dimension of the baking map", 64, 4096);
 	ot->prop = RNA_def_int(ot->srna, "margin", 16, 0, INT_MAX, "Margin", "Extends the baked result as a post process filter", 0, 64);
+	ot->prop = RNA_def_boolean(ot->srna, "use_selected_to_active", true, "Selected to Active", "Bake shading on the surface of selected objects to the active object");
+	ot->prop = RNA_def_float(ot->srna, "cage_extrusion", 0.0, 0.0, 1.0, "Cage Extrusion", "", 0.0, 1.0);
 }
