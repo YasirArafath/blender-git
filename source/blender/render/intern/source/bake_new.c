@@ -223,46 +223,19 @@ static void Barycentric(float p[3], float a[3], float b[3], float c[3], float *u
 /*
  * This function returns the barycentric u,v of a face for a coordinate. The face is defined by its index.
  */
-static void get_barycentric_from_point(TriTessFace *triangles, int (*lookup_id)[2], int index, float co[3], int *primitive_id, float *u, float *v)
+static void get_barycentric_from_point(TriTessFace *triangles, int index, float co[3], int *primitive_id, float *u, float *v)
 {
-	//NEXT: to test if this function is correct
-
-	int primitive_ids[2];
-	primitive_ids[0] = lookup_id[index][0];
-	primitive_ids[1] = lookup_id[index][1];
-
-	if (primitive_ids[1] == -1) {
-		float w;
-		TriTessFace *tri = &triangles[primitive_ids[0]];
-		Barycentric(co, tri->v1->co, tri->v2->co, tri->v3->co, u, v, &w);
-		*primitive_id = primitive_ids[0];
-	}
-	else {
-		TriTessFace *tri_a, *tri_b;
-		float w1, w2;
-		float u1, u2, v1, v2;
-
-		tri_a = &triangles[primitive_ids[0]];
-		tri_b = &triangles[primitive_ids[1]];
-
-		Barycentric(co, tri_a->v1->co, tri_a->v2->co, tri_a->v3->co, &u1, &v1, &w1);
-		Barycentric(co, tri_b->v1->co, tri_b->v2->co, tri_b->v3->co, &u2, &v2, &w2);
-
-		//TODO, pick one of them
-
-		printf("\n%02d[0]: %4.2f, %4.2f, %4.2f\n", index, u1, v1, w1);
-		printf("%02d[1]: %4.2f, %4.2f, %4.2f\n", index, u2, v2, w2);
-
-		*primitive_id = primitive_ids[0];
-		u = &u1;
-		v = &v1;
-	}
+	//TEST to see if it's working
+	float w;
+	TriTessFace *tri = &triangles[index];
+	Barycentric(co, tri->v1->co, tri->v2->co, tri->v3->co, u, v, &w);
+	*primitive_id = index;
 }
 
 /*
  * This function populates pixel_array and returns TRUE if things are correct
  */
-static bool cast_ray_highpoly(BVHTreeFromMesh *treeData, TriTessFace *triangles, int (*lookup_id)[2], BakePixel *pixel_array, float co[3], float dir[3])
+static bool cast_ray_highpoly(BVHTreeFromMesh *treeData, TriTessFace *triangles, BakePixel *pixel_array, float co[3], float dir[3])
 {
 	int primitive_id;
 	float u;
@@ -283,7 +256,7 @@ static bool cast_ray_highpoly(BVHTreeFromMesh *treeData, TriTessFace *triangles,
 			return false;
 		}
 
-		get_barycentric_from_point(triangles, lookup_id, hit.index, hit.co, &primitive_id, &u, &v);
+		get_barycentric_from_point(triangles, hit.index, hit.co, &primitive_id, &u, &v);
 
 		pixel_array->primitive_id = primitive_id;
 		pixel_array->u = u;
@@ -350,16 +323,13 @@ void RE_populate_bake_pixels_from_object(Mesh *me_low, Mesh *me_high, BakePixel 
 	/* Note: all coordinates are in local space */
 	TriTessFace *tris_low;
 	TriTessFace *tris_high;
-	int (*lookup_high)[2];
 
 	/* assume all tessfaces can be quads */
 	tris_low = MEM_callocN(sizeof(TriTessFace) * (me_low->totface * 2), "MVerts Lowpoly Mesh");
 	tris_high = MEM_callocN(sizeof(TriTessFace) * (me_high->totface * 2), "MVerts Highpoly Mesh");
 
-	lookup_high = MEM_callocN(sizeof(int) * me_high->totface * 2, "Highpoly index");
-
 	calculateTriTessFace(tris_low, me_low, NULL);
-	calculateTriTessFace(tris_high, me_high, lookup_high);
+	calculateTriTessFace(tris_high, me_high, NULL);
 
 	DerivedMesh *dm_low = CDDM_from_mesh(me_low);
 	DerivedMesh *dm_high = CDDM_from_mesh(me_high);
@@ -376,7 +346,6 @@ void RE_populate_bake_pixels_from_object(Mesh *me_low, Mesh *me_high, BakePixel 
 
 		MEM_freeN(tris_low);
 		MEM_freeN(tris_high);
-
 		return;
 	}
 
@@ -400,7 +369,7 @@ void RE_populate_bake_pixels_from_object(Mesh *me_low, Mesh *me_high, BakePixel 
 		//printf("co: %4.2f, %4.2f, %4.2f\n", co[0], co[1], co[2]);
 
 		/* cast ray */
-		cast_ray_highpoly(&treeData, tris_high, lookup_high, &pixel_array[i], co, dir);
+		cast_ray_highpoly(&treeData, tris_high, &pixel_array[i], co, dir);
 	}
 
 	/* garbage collection */
@@ -411,7 +380,6 @@ void RE_populate_bake_pixels_from_object(Mesh *me_low, Mesh *me_high, BakePixel 
 
 	MEM_freeN(tris_low);
 	MEM_freeN(tris_high);
-	MEM_freeN(lookup_high);
 }
 
 void RE_populate_bake_pixels(Mesh *me, BakePixel pixel_array[], const int width, const int height)

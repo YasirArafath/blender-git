@@ -202,6 +202,7 @@ static int bake_exec(bContext *C, wmOperator *op)
 	Mesh *me_low = NULL;
 	Mesh *me_high = NULL;
 
+	ModifierData *tri_mod;
 	int pass_type = RNA_enum_get(op->ptr, "type");
 
 	Render *re = RE_NewRender(scene->id.name);
@@ -293,6 +294,9 @@ static int bake_exec(bContext *C, wmOperator *op)
 	/* high-poly to low-poly baking */
 	if (ob_high && (ob_high->type == OB_MESH))
 	{
+		/* triangulating it makes life so much easier ... */
+		tri_mod = ED_object_modifier_add(op->reports, bmain, scene, ob_high, "TmpTriangulate", eModifierType_Triangulate);
+
 		me_high = BKE_mesh_new_from_object(bmain, scene, ob_high, 1, 2, 1, 0);
 
 		RE_populate_bake_pixels_from_object(me_low, me_high, pixel_array, num_pixels, cage_extrusion);
@@ -356,8 +360,13 @@ static int bake_exec(bContext *C, wmOperator *op)
 	else
 		ob_low->restrictflag |= OB_RESTRICT_RENDER;
 
-	if (restrict_render_high)
-		ob_high->restrictflag |= OB_RESTRICT_RENDER;
+	if (ob_high) {
+		if (restrict_render_high)
+			ob_high->restrictflag |= OB_RESTRICT_RENDER;
+
+		if (tri_mod)
+			ED_object_modifier_remove(op->reports, bmain, ob_high, tri_mod);
+	}
 
 	RE_SetReports(re, NULL);
 
