@@ -194,8 +194,8 @@ static int bake_exec(bContext *C, wmOperator *op)
 	Object *ob_high = NULL;
 	Object *ob_render = NULL;
 
-	bool restrict_render_low = ((ob_low->restrictflag & OB_RESTRICT_RENDER)==0);
-	bool restrict_render_high = true;
+	bool restrict_render_low = (ob_low->restrictflag & OB_RESTRICT_RENDER);
+	bool restrict_render_high = false;
 
 	Mesh *me = NULL;
 	int pass_type = RNA_enum_get(op->ptr, "type");
@@ -348,13 +348,14 @@ static int bake_exec(bContext *C, wmOperator *op)
 	}
 
 	/* restore the restrict render settings */
-	if (restrict_render_low) {
+	if (!restrict_render_low)
+		ob_low->restrictflag &= ~OB_RESTRICT_RENDER;
+	else
 		ob_low->restrictflag |= OB_RESTRICT_RENDER;
-	}
 
-	if (!restrict_render_high) {
-		ob_high->restrictflag &= ~OB_RESTRICT_RENDER;
-	}
+	if (restrict_render_high)
+		ob_high->restrictflag |= OB_RESTRICT_RENDER;
+
 
 	MEM_freeN(pixel_array);
 	MEM_freeN(result);
@@ -440,6 +441,6 @@ void OBJECT_OT_bake(wmOperatorType *ot)
 	ot->prop = RNA_def_int(ot->srna, "width", 512, 1, INT_MAX, "Width", "Horizontal dimension of the baking map", 64, 4096);
 	ot->prop = RNA_def_int(ot->srna, "height", 512, 1, INT_MAX, "Height", "Vertical dimension of the baking map", 64, 4096);
 	ot->prop = RNA_def_int(ot->srna, "margin", 16, 0, INT_MAX, "Margin", "Extends the baked result as a post process filter", 0, 64);
-	ot->prop = RNA_def_boolean(ot->srna, "use_selected_to_active", true, "Selected to Active", "Bake shading on the surface of selected objects to the active object");
+	ot->prop = RNA_def_boolean(ot->srna, "use_selected_to_active", false, "Selected to Active", "Bake shading on the surface of selected objects to the active object");
 	ot->prop = RNA_def_float(ot->srna, "cage_extrusion", 0.0, 0.0, 1.0, "Cage Extrusion", "", 0.0, 1.0);
 }
