@@ -189,9 +189,15 @@ static int bake_exec(bContext *C, wmOperator *op)
 	int op_result = OPERATOR_CANCELLED;
 	bool ok = false;
 	Scene *scene = CTX_data_scene(C);
-	Object *object = CTX_data_active_object(C);
-	Mesh *me = NULL;
 
+	Object *ob_low = CTX_data_active_object(C);
+	Object *ob_high = NULL;
+	Object *ob_render = NULL;
+
+	bool restrict_render_low = ((ob_low->restrictflag & OB_RESTRICT_RENDER)==0);
+	bool restrict_render_high = true;
+
+	Mesh *me = NULL;
 	int pass_type = RNA_enum_get(op->ptr, "type");
 
 	Render *re = RE_NewRender(scene->id.name);
@@ -211,20 +217,18 @@ static int bake_exec(bContext *C, wmOperator *op)
 	char filepath[FILE_MAX];
 	RNA_string_get(op->ptr, "filepath", filepath);
 
-	Object *from_object = NULL;
-
 	if (use_selected_to_active) {
 		CTX_DATA_BEGIN(C, Object *, ob_iter, selected_editable_objects)
 		{
-			if (ob_iter == object)
+			if (ob_iter == ob_low)
 				continue;
 
-			from_object = ob_iter;
+			ob_high = ob_iter;
 			break;
 		}
 		CTX_DATA_END;
 
-		if (from_object == NULL) {
+		if (ob_high == NULL) {
 			BKE_report(op->reports, RPT_ERROR, "No valid selected object");
 			return OPERATOR_CANCELLED;
 		}
@@ -278,27 +282,37 @@ static int bake_exec(bContext *C, wmOperator *op)
 
 	/* get the mesh as it arrives in the renderer */
 	//int apply_modifiers, int settings (1=preview, 2=render), int calc_tessface, int calc_undeformed
-	me = BKE_mesh_new_from_object(bmain, scene, object, 1, 2, 1, 0);
+	me = BKE_mesh_new_from_object(bmain, scene, ob_low, 1, 2, 1, 0);
 	//TODO delete the mesh afterwards
 
 	/* populate the pixel array with the face data */
 	RE_populate_bake_pixels(me, pixel_array, width, height);
 
 	/* high-poly to low-poly baking */
-	if (from_object && (from_object->type == OB_MESH))
+	if (ob_high && (ob_high->type == OB_MESH))
 	{
-		Mesh *from_me = BKE_mesh_new_from_object(bmain, scene, from_object, 1, 2, 1, 0);
+		Mesh *me_high = BKE_mesh_new_from_object(bmain, scene, ob_high, 1, 2, 1, 0);
 		//TODO delete the mesh afterwards
 
-		RE_populate_bake_pixels_from_object(me, from_me, pixel_array, num_pixels, cage_extrusion);
+		RE_populate_bake_pixels_from_object(me, me_high, pixel_array, num_pixels, cage_extrusion);
 
-		object = from_object;
+		/* make sure low poly doesn't render, and high poly renders */
+		restrict_render_high = (ob_high->restrictflag & OB_RESTRICT_RENDER);
+		ob_high->restrictflag &= ~OB_RESTRICT_RENDER;
+
+		ob_low->restrictflag |= OB_RESTRICT_RENDER;
+		ob_render = ob_high;
+	}
+	else {
+		/* make sure low poly renders */
+		ob_low->restrictflag &= ~OB_RESTRICT_RENDER;
+		ob_render = ob_low;
 	}
 
 	if (RE_engine_has_bake(re))
-		ok = RE_engine_bake(re, object, pixel_array, num_pixels, depth, pass_type, result);
+		ok = RE_engine_bake(re, ob_render, pixel_array, num_pixels, depth, pass_type, result);
 	else
-		ok = RE_internal_bake(re, object, pixel_array, num_pixels, depth, pass_type, result);
+		ok = RE_internal_bake(re, ob_render, pixel_array, num_pixels, depth, pass_type, result);
 
 	if (!ok) {
 		BKE_report(op->reports, RPT_ERROR, "Problem baking object map");
@@ -331,6 +345,15 @@ static int bake_exec(bContext *C, wmOperator *op)
 			BKE_report(op->reports, RPT_ERROR, "Only external baking supported at the moment");
 			op_result = OPERATOR_CANCELLED;
 		}
+	}
+
+	/* restore the restrict render settings */
+	if (restrict_render_low) {
+		ob_low->restrictflag |= OB_RESTRICT_RENDER;
+	}
+
+	if (!restrict_render_high) {
+		ob_high->restrictflag &= ~OB_RESTRICT_RENDER;
 	}
 
 	MEM_freeN(pixel_array);
