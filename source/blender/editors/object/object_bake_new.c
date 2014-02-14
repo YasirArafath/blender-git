@@ -57,6 +57,7 @@
 #include "BKE_context.h"
 #include "BKE_global.h"
 #include "BKE_image.h"
+#include "BKE_library.h"
 #include "BKE_main.h"
 #include "BKE_multires.h"
 #include "BKE_report.h"
@@ -190,14 +191,17 @@ static int bake_exec(bContext *C, wmOperator *op)
 	bool ok = false;
 	Scene *scene = CTX_data_scene(C);
 
+	/* selected to active (high to low) */
+	Object *ob_render = NULL;
 	Object *ob_low = CTX_data_active_object(C);
 	Object *ob_high = NULL;
-	Object *ob_render = NULL;
 
 	bool restrict_render_low = (ob_low->restrictflag & OB_RESTRICT_RENDER);
 	bool restrict_render_high = false;
 
-	Mesh *me = NULL;
+	Mesh *me_low = NULL;
+	Mesh *me_high = NULL;
+
 	int pass_type = RNA_enum_get(op->ptr, "type");
 
 	Render *re = RE_NewRender(scene->id.name);
@@ -281,20 +285,17 @@ static int bake_exec(bContext *C, wmOperator *op)
 
 
 	/* get the mesh as it arrives in the renderer */
-	//int apply_modifiers, int settings (1=preview, 2=render), int calc_tessface, int calc_undeformed
-	me = BKE_mesh_new_from_object(bmain, scene, ob_low, 1, 2, 1, 0);
-	//TODO delete the mesh afterwards
+	me_low = BKE_mesh_new_from_object(bmain, scene, ob_low, 1, 2, 1, 0);
 
 	/* populate the pixel array with the face data */
-	RE_populate_bake_pixels(me, pixel_array, width, height);
+	RE_populate_bake_pixels(me_low, pixel_array, width, height);
 
 	/* high-poly to low-poly baking */
 	if (ob_high && (ob_high->type == OB_MESH))
 	{
-		Mesh *me_high = BKE_mesh_new_from_object(bmain, scene, ob_high, 1, 2, 1, 0);
-		//TODO delete the mesh afterwards
+		me_high = BKE_mesh_new_from_object(bmain, scene, ob_high, 1, 2, 1, 0);
 
-		RE_populate_bake_pixels_from_object(me, me_high, pixel_array, num_pixels, cage_extrusion);
+		RE_populate_bake_pixels_from_object(me_low, me_high, pixel_array, num_pixels, cage_extrusion);
 
 		/* make sure low poly doesn't render, and high poly renders */
 		restrict_render_high = (ob_high->restrictflag & OB_RESTRICT_RENDER);
@@ -302,6 +303,8 @@ static int bake_exec(bContext *C, wmOperator *op)
 
 		ob_low->restrictflag |= OB_RESTRICT_RENDER;
 		ob_render = ob_high;
+
+		BKE_libblock_free(bmain, me_high);
 	}
 	else {
 		/* make sure low poly renders */
@@ -356,12 +359,13 @@ static int bake_exec(bContext *C, wmOperator *op)
 	if (restrict_render_high)
 		ob_high->restrictflag |= OB_RESTRICT_RENDER;
 
+	RE_SetReports(re, NULL);
 
+	/* garbage collection */
 	MEM_freeN(pixel_array);
 	MEM_freeN(result);
 
-	RE_SetReports(re, NULL);
-
+	BKE_libblock_free(bmain, me_low);
 
 #if 0
 	Main *bmain = CTX_data_main(C);
