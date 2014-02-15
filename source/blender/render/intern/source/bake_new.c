@@ -354,6 +354,17 @@ void RE_populate_bake_pixels_from_object(Mesh *me_low, Mesh *me_high, BakePixel 
 		return;
 	}
 
+#if 0
+	{
+		float co[3];
+		float dir[3];
+		get_point_from_barycentric(tris_low, 0, 0.5f, 0.5f, 0.0, co, dir);
+		//printf("co: %4.2f, %4.2f, %4.2f\n", co[0], co[1], co[2]);
+		return;
+
+	}
+#endif
+
 	for (i=0; i < num_pixels; i++) {
 		float co[3];
 		float dir[3];
