@@ -165,11 +165,12 @@ typedef struct TriTessFace
  * This function returns the coordinate and normal of a barycentric u,v for a face defined by the primitive_id index.
  */
 
-static void get_point_from_barycentric(TriTessFace *triangles, int primitive_id, float u, float v, float UNUSED(cage_extrusion), float r_co[3], float r_dir[3])
+static void get_point_from_barycentric(TriTessFace *triangles, int primitive_id, float u, float v, float cage_extrusion, float r_co[3], float r_dir[3])
 {
 	float data[3][3];
 	float coord[3];
 	float dir[3];
+	float cage[3];
 
 	TriTessFace *mverts = &triangles[primitive_id];
 
@@ -184,9 +185,13 @@ static void get_point_from_barycentric(TriTessFace *triangles, int primitive_id,
 	normal_short_to_float_v3(data[2], mverts->v3->no);
 
 	interp_barycentric_tri_v3(data, u, v, dir);
-	mul_v3_fl(dir, -1.0f);
+	normalize_v3_v3(cage, dir);
+	mul_v3_fl(cage, cage_extrusion);
 
-	//TODO cage_extrusion + softness
+	add_v3_v3(coord, cage);
+
+	normalize_v3_v3(dir, dir);
+	mul_v3_fl(dir, -1.0f);
 
 	copy_v3_v3(r_co, coord);
 	copy_v3_v3(r_dir, dir);
